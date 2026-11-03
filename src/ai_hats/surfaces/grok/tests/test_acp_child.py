@@ -93,6 +93,85 @@ def test_elicitation_is_used_when_the_client_declared_it() -> None:
     assert decision.message["method"] == "elicitation/create"
 
 
+def test_a_multiselect_question_is_an_array_property() -> None:
+    request = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "_x.ai/ask_user_question",
+        "params": {
+            "questions": [
+                {
+                    "question": "Which?",
+                    "options": [{"label": "red"}, {"label": "blue"}],
+                    "multiSelect": True,
+                }
+            ]
+        },
+    }
+
+    decision = GrokAcpChild().present_question(request, elicitation=True)
+
+    assert isinstance(decision, AskClient)
+    prop = decision.message["params"]["requestedSchema"]["properties"]["Which?"]
+    assert prop == {
+        "type": "array",
+        "uniqueItems": True,
+        "description": "Which?",
+        "items": {"type": "string", "enum": ["red", "blue"]},
+    }
+
+
+def test_snake_case_multiselect_is_the_same_array() -> None:
+    request = _which_question(multi_select=True)
+
+    decision = GrokAcpChild().present_question(request, elicitation=True)
+
+    assert isinstance(decision, AskClient)
+    prop = decision.message["params"]["requestedSchema"]["properties"]["Which?"]
+    assert prop["type"] == "array"
+    assert prop["items"]["enum"] == ["red", "blue"]
+
+
+def test_a_single_question_stays_a_string_enum() -> None:
+    child = GrokAcpChild()
+
+    plain = child.present_question(_which_question(), elicitation=True)
+    refused = child.present_question(_which_question(multiSelect=False), elicitation=True)
+
+    assert isinstance(plain, AskClient)
+    assert isinstance(refused, AskClient)
+    for decision in (plain, refused):
+        prop = decision.message["params"]["requestedSchema"]["properties"]["Which?"]
+        assert prop == {"type": "string", "description": "Which?", "enum": ["red", "blue"]}
+
+
+def test_several_picks_come_back_as_a_list() -> None:
+    request = _which_question(multiSelect=True)
+    child = GrokAcpChild()
+    decision = child.present_question(request, elicitation=True)
+
+    assert isinstance(decision, AskClient)
+    answer = child.answer_for_child(
+        decision.original, {"action": "accept", "content": {"Which?": ["red", "blue"]}}
+    )
+
+    assert answer == {"outcome": "accepted", "answers": {"Which?": ["red", "blue"]}}
+
+
+def _which_question(**flags: bool) -> dict:
+    question: dict = {
+        "question": "Which?",
+        "options": [{"label": "red"}, {"label": "blue"}],
+    }
+    question.update(flags)
+    return {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "_x.ai/ask_user_question",
+        "params": {"questions": [question]},
+    }
+
+
 def _permission(call_id: str, claimed: str) -> dict:
     return {
         "jsonrpc": "2.0",
