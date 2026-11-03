@@ -132,6 +132,50 @@ def test_a_git_hook_inside_a_linked_worktree_is_refused(project: Path):
     assert str(project) in str(exc_info.value)
 
 
+def test_armed_gates_resolve_to_main_when_cwd_is_a_linked_worktree(tmp_path, monkeypatch):
+    """project_dir is main. The committing cwd is a linked worktree. Gates run from main."""
+    main = tmp_path / "main"
+    wt = tmp_path / "wt"
+    main_script = _monorepo_gate(main)
+    wt_script = _monorepo_gate(wt)
+    (main / ".git" / "worktrees" / wt.name).mkdir(parents=True)
+    (wt / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / wt.name}\n")
+    ProjectConfig(provider="claude", library_paths=[]).save(main / PROJECT_CONFIG)
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(wt)
+    from ai_hats.composition_seam import armed_plan, build_preview_payload
+    from ai_hats.githooks_resolve import resolve_git_gates_from_plan
+
+    plan = armed_plan(main, "gated")
+    assert plan is not None
+    resolution = resolve_git_gates_from_plan(plan, "pre-push")
+
+    assert resolution.refusals == ()
+    assert [gate.path for gate in resolution.gates] == [main_script]
+    preview = build_preview_payload(main, role="gated", experimental=True)
+    assert preview.plan is not None
+    assert [hook.run.path.resolve() for hook in preview.plan.hooks.external if hook.run] == [
+        wt_script
+    ]
+
+
+def _monorepo_gate(repo: Path) -> Path:
+    lib = repo / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    for layer in ("core", "usage"):
+        (lib / layer).mkdir(parents=True)
+    (lib / "core" / "pipelines").mkdir()
+    root = lib / "experimental" / "core"
+    script = root / "skills" / "tool" / "scripts" / "run.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/usr/bin/env bash\nexit 0\n")
+    script.chmod(0o755)
+    (root / "gate.yaml").write_text(
+        "schema_version: 1\ntype: hook\nkind: git\nat: pre-push\nrun: skills/tool/scripts/run.sh\n"
+    )
+    (root / "gated.yaml").write_text("schema_version: 1\ntype: composite\nexpr: gate\n")
+    return script.resolve()
+
+
 def test_the_marker_keeps_the_channels_off_the_composer(project: Path):
     """Under re the expression is a plan. Under the empty marker it is a role name, and this one is not."""
     assert compose_for_checks(project, "alpha + bare", dsl="re") is None

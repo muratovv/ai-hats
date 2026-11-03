@@ -434,7 +434,7 @@ def build_preview_payload(
     )
 
 
-def _candidate_plan(project_dir: Path, expression: str | None):
+def _candidate_plan(project_dir: Path, expression: str | None, *, prefer_cwd: bool = True):
     """The plan only. A gate reads its hooks and does not need a provider."""
     from .assembler import Assembler
     from .paths import builtin_library_root
@@ -442,9 +442,10 @@ def _candidate_plan(project_dir: Path, expression: str | None):
 
     if not expression:
         raise ProcessingError('-re needs an expression: ai-hats -re dry-run "<expr>"')
-    asm = Assembler(project_dir, prefer_cwd=True)
+    asm = Assembler(project_dir, prefer_cwd=prefer_cwd)
     roots = candidate_roots(
-        asm.library_paths, builtin_root=builtin_library_root(project_dir, prefer_cwd=True)
+        asm.library_paths,
+        builtin_root=builtin_library_root(project_dir, prefer_cwd=prefer_cwd),
     )
     if not roots:
         raise ProcessingError(
@@ -524,8 +525,11 @@ def armed_plan(project_dir: Path, role: str | None):
 
     Callers that still ask :func:`compose_for_checks` for a ``CompositionResult``
     hit the tripwire below: there is no projection back into that value.
+
+    Gates execute, so the plan follows ``project_dir``. ``prefer_cwd`` would
+    resolve them inside the worktree being committed, and D9 then refuses.
     """
-    _asm, plan, _diagnostics = _candidate_plan(project_dir, role)
+    _asm, plan, _diagnostics = _candidate_plan(project_dir, role, prefer_cwd=False)
     if plan.hooks.runtime or plan.hooks.external:
         return plan
     return None
