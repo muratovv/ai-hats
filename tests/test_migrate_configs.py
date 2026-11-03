@@ -110,6 +110,39 @@ def test_an_empty_customization_is_printed(tmp_path: Path):
     assert not (out / "overrides").exists()
 
 
+def test_a_project_customization_and_its_user_rules_are_translated(tmp_path: Path):
+    """The project overlay lives in ``ai-hats.yaml``; its rules live under ``ai_hats_dir``."""
+    home = tmp_path / "proj"
+    rules = home / ".agent" / "ai-hats" / "user-rules"
+    rules.mkdir(parents=True)
+    (rules / "no-force-push.md").write_text("Do not force-push.\n")
+    (home / "ai-hats.yaml").write_text(
+        "ai_hats_dir: .agent/ai-hats\n"
+        "default_role: assistant\n"
+        "customizations:\n"
+        "  maintainer:\n"
+        "    add:\n"
+        "      traits: [personal-workflow]\n"
+    )
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert "personal-workflow" in (out / "overrides" / "customize-maintainer.yaml").read_text()
+    assert "no-force-push" in (out / "rules" / "no-force-push.md").read_text()
+    assert "default: assistant" in (out / "ai-hats.yaml").read_text()
+
+
+def test_an_empty_rule_directory_and_customization_are_printed(tmp_path: Path):
+    home = tmp_path / "proj"
+    (home / ".agent" / "ai-hats" / "user-rules").mkdir(parents=True)
+    (home / "ai-hats.yaml").write_text("ai_hats_dir: .agent/ai-hats\ncustomizations: {}\n")
+    out = tmp_path / "out"
+    result = _run("--home", str(home), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert "customization produced nothing" in result.stdout
+    assert "user-rules produced nothing" in result.stdout
+
+
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):
     home = tmp_path / "home"
     (home / "user-rules").mkdir(parents=True)

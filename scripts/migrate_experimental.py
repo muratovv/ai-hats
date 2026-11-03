@@ -806,40 +806,70 @@ def _stanza_expr(overlay: dict) -> str:
     return " ".join(parts)
 
 
-def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
-    """Turn today's customizations, user rules, paths and dropins into flat files.
+def _write_customizations(
+    data: object, out: Path, notes: list[str], known: set[str] | None
+) -> None:
+    """The same override files for a user ``customizations.yaml`` and a project map."""
+    if not isinstance(data, dict) or not data:
+        notes.append("customization produced nothing")
+        return
+    for role, overlay in data.items():
+        if known is not None and role not in known:
+            notes.append(f"unknown role: {role}")
+        overlay = overlay if isinstance(overlay, dict) else {}
+        expr = _stanza_expr(overlay)
+        prose = overlay.get("injection_append")
+        if isinstance(prose, str) and prose.strip():
+            term = f"customize-{role}-injection"
+            body = prose if prose.endswith("\n") else f"{prose}\n"
+            _put(
+                out / f"{term}.md",
+                f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: body\n---\n{body}",
+            )
+            expr = f"{expr} + {term}".strip()
+        if not expr:
+            notes.append(f"customization produced nothing: {role}")
+            continue
+        _put(
+            out / "overrides" / f"customize-{role}.yaml",
+            f"schema_version: {SCHEMA_VERSION}\ntype: override\n"
+            f'apply: "^{role}$"\nexpr: "{expr}"\n',
+        )
 
-    Returns the lines to print: an unknown role, and nothing else. A stanza
-    for a role the known set does not contain is still written — the line is
-    how it is presented.
-    """
+
+def _rule_dirs(home: Path, project: dict | None) -> list[Path]:
+    """``home/user-rules`` for ``~/.ai-hats``, plus the project's ``ai_hats_dir`` copy."""
+    found: list[Path] = []
+    direct = home / "user-rules"
+    if direct.is_dir():
+        found.append(direct)
+    if project is None:
+        return found
+    ai_hats_dir = project.get("ai_hats_dir") or ".agent/ai-hats"
+    if not isinstance(ai_hats_dir, str):
+        ai_hats_dir = ".agent/ai-hats"
+    laid = home / ai_hats_dir / "user-rules"
+    if laid.is_dir() and all(laid.resolve() != path.resolve() for path in found):
+        found.append(laid)
+    return found
+
+
+def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
+    """Turn today's customizations, user rules, paths and dropins into flat files."""
     notes: list[str] = []
     customs = home / "customizations.yaml"
     if customs.is_file():
-        data = _load_yaml(customs).get("customizations") or {}
-        for role, overlay in data.items():
-            if known is not None and role not in known:
-                notes.append(f"unknown role: {role}")
-            overlay = overlay if isinstance(overlay, dict) else {}
-            expr = _stanza_expr(overlay)
-            prose = overlay.get("injection_append")
-            if isinstance(prose, str) and prose.strip():
-                term = f"customize-{role}-injection"
-                body = prose if prose.endswith("\n") else f"{prose}\n"
-                _put(
-                    out / f"{term}.md",
-                    f"---\nschema_version: {SCHEMA_VERSION}\ntype: prompt\nblock: body\n---\n{body}",
-                )
-                expr = f"{expr} + {term}".strip()
-            if not expr:
-                notes.append(f"customization produced nothing: {role}")
-                continue
-            _put(
-                out / "overrides" / f"customize-{role}.yaml",
-                f"schema_version: {SCHEMA_VERSION}\ntype: override\n"
-                f'apply: "^{role}$"\nexpr: "{expr}"\n',
-            )
-    rules = sorted((home / "user-rules").glob("*.md")) if (home / "user-rules").is_dir() else []
+        _write_customizations(_load_yaml(customs).get("customizations") or {}, out, notes, known)
+    project_file = home / "ai-hats.yaml"
+    project = _load_yaml(project_file) if project_file.is_file() else None
+    if project is not None and "customizations" in project:
+        _write_customizations(project.get("customizations") or {}, out, notes, known)
+    rules: list[Path] = []
+    for directory in _rule_dirs(home, project):
+        found = sorted(directory.glob("*.md"))
+        if not found:
+            notes.append("user-rules produced nothing")
+        rules.extend(found)
     rule_names: list[str] = []
     for rule in rules:
         rule_names.append(rule.stem)
@@ -862,13 +892,11 @@ def migrate_home(home: Path, out: Path, known: set[str] | None) -> list[str]:
         paths = _load_yaml(paths_file).get("paths") or []
         lines = "\n".join(f"    - {item}" for item in paths)
         _put(out / "config.yaml", f"library:\n  paths:\n{lines}\n")
-    project = home / "ai-hats.yaml"
-    if project.is_file():
-        data = _load_yaml(project)
-        if data.get("default_role"):
-            _put(out / "ai-hats.yaml", f"library:\n  default: {data['default_role']}\n")
-        if data.get("active_role"):
-            _put(out / "local.yaml", f"active: {data['active_role']}\n")
+    if project is not None:
+        if project.get("default_role"):
+            _put(out / "ai-hats.yaml", f"library:\n  default: {project['default_role']}\n")
+        if project.get("active_role"):
+            _put(out / "local.yaml", f"active: {project['active_role']}\n")
     dropins: list[tuple[str, str]] = []
     hooks = home / ".githooks"
     if hooks.is_dir():
