@@ -733,8 +733,10 @@ def _scan_roots(root: Path) -> list[Path]:
 
 
 def _resolve_composite(term: str, names: dict[str, object]) -> str | None:
-    """The one composite ``term`` is a suffix of, or ``None`` when it is a leaf."""
-    candidates = [name for name in names if name == term or name.endswith("::" + term)]
+    """An exact composite name wins; a unique ``::`` suffix otherwise, else a leaf."""
+    if term in names:
+        return term
+    candidates = [name for name in names if name.endswith("::" + term)]
     if len(candidates) > 1:
         listed = ", ".join(sorted(candidates))
         raise Refusal(f"{term!r} is ambiguous — it names {listed}; write a longer suffix")

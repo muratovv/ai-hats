@@ -240,6 +240,8 @@ def test_a_rule_whose_stem_is_a_composite_does_not_make_re_ambiguous(tmp_path: P
     plan = compose("role", [Root(out)], layout=layout, diagnostics=[])
     assert "BASE" in plan.prompt.text
     assert "Do not skip the review." in plan.prompt.text
+    own = compose("worker", [Root(out)], layout=layout, diagnostics=[])
+    assert "BASE" in own.prompt.text
 
 
 def test_customizations_become_overrides_and_an_unknown_role_is_named(tmp_path: Path):

@@ -38,8 +38,10 @@ def merge(library: Library, diagnostics: list[Diagnostic]) -> Tree:
 
 
 def resolve(tree: Tree, term: str) -> str:
-    """The one full name ``term`` is a suffix of; zero or several refuse."""
-    candidates = [name for name in tree.entities if name == term or name.endswith("::" + term)]
+    """The one full name ``term`` is a suffix of. An exact name wins; zero or several suffixes refuse."""
+    if term in tree.entities:
+        return term
+    candidates = [name for name in tree.entities if name.endswith("::" + term)]
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
