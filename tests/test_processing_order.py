@@ -165,15 +165,13 @@ def test_a_worktree_library_is_project_for_the_chain(tmp_path: Path, monkeypatch
         home / ".ai-hats" / "experimental",
         {"user-mine.yaml": "schema_version: 1\ntype: composite\nexpr: proj-secret\n"},
     )
-    monkeypatch.chdir(wt)
-
     with pytest.raises(ProcessingError, match="owned by project"):
-        build_preview_payload(proj, role="user-mine", experimental=True)
-    held = build_preview_payload(proj, role="holder", experimental=True)
+        build_preview_payload(proj, role="user-mine", experimental=True, cwd=wt)
+    held = build_preview_payload(proj, role="holder", experimental=True, cwd=wt)
     assert "SECRET" in held.plan.prompt.text
 
 
-def test_a_worktree_library_may_name_its_project_library_path(tmp_path: Path, monkeypatch):
+def test_a_worktree_library_may_name_its_project_library_path(tmp_path: Path):
     """A project ``library_paths`` root stays project when it is not repointed."""
     proj = tmp_path / "repo"
     proj.mkdir()
@@ -197,9 +195,7 @@ def test_a_worktree_library_may_name_its_project_library_path(tmp_path: Path, mo
         wt / "libraries" / "experimental",
         {"holder.yaml": "schema_version: 1\ntype: composite\nexpr: ext-secret\n"},
     )
-    monkeypatch.chdir(wt)
-
-    held = build_preview_payload(proj, role="holder", experimental=True)
+    held = build_preview_payload(proj, role="holder", experimental=True, cwd=wt)
     assert "EXTERNAL" in held.plan.prompt.text
 
 

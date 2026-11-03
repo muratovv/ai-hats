@@ -359,7 +359,7 @@ def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, capture_output=True, check=True)
 
 
-def test_a_repointed_library_is_not_added_again_as_its_main_checkout(tmp_path: Path, monkeypatch):
+def test_a_repointed_library_is_not_added_again_as_its_main_checkout(tmp_path: Path):
     """The new key names main; the chain already searched the worktree copy."""
     lib = tmp_path / "custom"
     lib.mkdir()
@@ -390,9 +390,7 @@ def test_a_repointed_library_is_not_added_again_as_its_main_checkout(tmp_path: P
         "  paths:\n"
         f"    - {lib}\n"
     )
-    monkeypatch.chdir(wt)
-
-    payload = build_preview_payload(proj, role="role", experimental=True)
+    payload = build_preview_payload(proj, role="role", experimental=True, cwd=wt)
     document = payload.plan.skills[0].document
     assert "WORKTREE SKILL" in document
     assert "MAIN SKILL" not in document
@@ -426,9 +424,7 @@ def test_a_user_library_path_searches_the_worktree_it_was_repointed_to(tmp_path:
     proj = tmp_path / "proj"
     proj.mkdir()
     ProjectConfig(provider="claude", library_paths=[]).save(proj / PROJECT_CONFIG)
-    monkeypatch.chdir(wt)
-
-    payload = build_preview_payload(proj, role="role", experimental=True)
+    payload = build_preview_payload(proj, role="role", experimental=True, cwd=wt)
     document = payload.plan.skills[0].document
     assert "WORKTREE SKILL" in document
     assert "MAIN SKILL" not in document

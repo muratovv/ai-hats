@@ -86,7 +86,7 @@ def user_global_library_paths() -> list[Path]:
     return roots
 
 
-def worktree_local_libraries(project_dir: Path) -> Path | None:
+def worktree_local_libraries(project_dir: Path, cwd: Path | None = None) -> Path | None:
     """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
 
     Inside a linked worktree ``project_dir`` hopped to MAIN, so the
@@ -99,7 +99,7 @@ def worktree_local_libraries(project_dir: Path) -> Path | None:
     owes this: a caller that skips it searches a root set the composition does
     not have, and a declaration it cannot see reads as absent.
     """  # comment-length: allow — the second paragraph IS the reason it moved here
-    remap = _worktree_remap(project_dir, Path.cwd())
+    remap = _worktree_remap(project_dir, Path.cwd() if cwd is None else cwd)
     if remap is None:
         return None
     main, top = remap

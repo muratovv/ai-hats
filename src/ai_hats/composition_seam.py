@@ -484,7 +484,11 @@ def _insert_user_library_paths(
 
 
 def _insert_project_library_paths(
-    chain: list[Path], project_paths: list[Path], *, project_dir: Path
+    chain: list[Path],
+    project_paths: list[Path],
+    *,
+    project_dir: Path,
+    cwd: Path | None,
 ) -> list[Path]:
     """Project ``library.paths`` precede ``<project>/libraries``."""
     from .library_paths import worktree_local_libraries
@@ -492,7 +496,7 @@ def _insert_project_library_paths(
     fresh = _fresh_roots(chain, project_paths)
     if not fresh:
         return chain
-    local = worktree_local_libraries(project_dir) or (project_dir / "libraries")
+    local = worktree_local_libraries(project_dir, cwd) or (project_dir / "libraries")
     if local.is_dir():
         resolved = local.resolve()
         for index, path in enumerate(chain):
@@ -531,7 +535,7 @@ def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
         resolved = path.resolve() if path.is_absolute() else (project_dir / path).resolve()
         project_roots.append(_repoint(resolved, remap))
     project_roots.extend(_repoint(path, remap) for path in slots.project_paths)
-    local = worktree_local_libraries(project_dir) or (project_dir / "libraries")
+    local = worktree_local_libraries(project_dir, here) or (project_dir / "libraries")
     if local.is_dir():
         project_roots.append(local.resolve())
 
@@ -555,6 +559,7 @@ def _candidate_roots(asm, project_dir: Path, diagnostics: list[Diagnostic]):
         chain,
         [_repoint(path, remap) for path in slots.project_paths],
         project_dir=project_dir,
+        cwd=here,
     )
     roots = candidate_roots(
         chain,
