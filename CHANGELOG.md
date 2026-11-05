@@ -10,14 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-11-05
+
+### Added
+
+- **`-re` arms the five hook kinds from the plan** (HATS-1969). `ai-hats -re dry-run maintainer` shows `hooks.runtime`, `hooks.external`, and the consent points. Subtracting `rack.transition::done` leaves the other points armed and records who removed it. A candidate session asks for consent, and `rack transition … done` runs `done-gate` when the library root sits outside a linked worktree. A git gate from the plan refuses that same root.
+- **A file `type: override` appends after assignments** (HATS-2011). Under `-re`, the file's expression is appended to every composite whose name or tag fullmatches `apply`, after the assignments, in `(layer, path)` order. `library.default`, machine `active`, and the CLI are three unnamed slots: a leading sign appends, a bare expression replaces. A file may name only components of its own owner or a lower one. A term that equals a full name resolves to it; a unique `::` suffix resolves when that exact name is absent; two proper suffixes refuse. `ai-hats -re list overrides` prints the files. `scripts/migrate_experimental.py --home` turns customizations, user-rules, library paths, the default and active role, and git drop-ins into those files. User library roots sit with the other user roots, so a same-named skill there does not replace the library skill.
+
+### Changed
+
+- **`ai-hats -re maintainer` starts the candidate session** (HATS-2134). A lone word after `-re` is the expression, the same record as `ai-hats -re -- maintainer`. `-re` stays a flag, so `ai-hats -re dry-run maintainer` still runs the subcommand.
+- **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.
+
 ### Fixed
 
 - **A grok question with `multiSelect` is an array property** (HATS-2135). `elicitation/create` sends `type: array`, `uniqueItems: true`, and the option labels on `items.enum`. A question without the flag stays a string enum.
 - **A candidate gate resolves from the project checkout** (HATS-2137). `armed_plan` follows `project_dir`, so a commit or a tracker transition inside a linked worktree runs the gates from main. A candidate preview still follows the cwd.
-
-### Changed
-
-- **The library floor follows the maintainer candidate** (HATS-1969). `ai-hats-library` 0.11.3. This package requires `ai-hats-library>=0.11.3`.
 
 ## [0.19.4] - 2026-11-01
 
@@ -3020,7 +3028,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.4...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.19.5...HEAD
+[0.19.5]: https://github.com/muratovv/ai-hats/compare/v0.19.4...v0.19.5
 [0.19.4]: https://github.com/muratovv/ai-hats/compare/v0.19.3...v0.19.4
 [0.19.3]: https://github.com/muratovv/ai-hats/compare/v0.19.2...v0.19.3
 [0.19.2]: https://github.com/muratovv/ai-hats/compare/v0.19.1...v0.19.2
