@@ -25,8 +25,21 @@ import pytest
 pytestmark = [pytest.mark.integration, pytest.mark.library]
 
 
+def _empty_user_home(tmp_project) -> dict[str, str]:
+    """Pin ``-re`` off ``~/.ai-hats``; ``clean_env`` drops the inherited home."""
+    home = tmp_project.path.parent / "user-home"
+    home.mkdir()
+    return {"AI_HATS_USER_HOME": str(home)}
+
+
 def test_dry_run_json_projects_the_candidate_plan(tmp_project) -> None:
-    result = tmp_project.run("-re", "dry-run", "hypothesis-intake + worker", "--json").expect_ok()
+    result = tmp_project.run(
+        "-re",
+        "dry-run",
+        "hypothesis-intake + worker",
+        "--json",
+        extra_env=_empty_user_home(tmp_project),
+    ).expect_ok()
     record = json.loads(result.stdout)
     composition = record["composition"]
     assert record["role"] == "hypothesis-intake + worker"
@@ -55,7 +68,8 @@ def test_dry_run_json_projects_the_candidate_plan(tmp_project) -> None:
 
 
 def test_show_prompt_prints_a_bare_trait_the_reference_refuses(tmp_project) -> None:
-    shown = tmp_project.run("-re", "show-prompt", "worker").expect_ok()
+    isolated = _empty_user_home(tmp_project)
+    shown = tmp_project.run("-re", "show-prompt", "worker", extra_env=isolated).expect_ok()
     assert shown.stdout.startswith("## WORKER (paired session)")
     # Positive control: the reference path still cannot show a trait (rc=2).
-    tmp_project.run("config", "show-prompt", "--role", "worker").expect_exit(2)
+    tmp_project.run("config", "show-prompt", "--role", "worker", extra_env=isolated).expect_exit(2)
