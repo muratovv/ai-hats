@@ -61,14 +61,22 @@ def _env(project: Path, checkout_bin: Path, library: Path) -> dict[str, str]:
 
     from _helpers.sessions import build_session
 
+    # Compose reads the process env; leaving the root set leaks into later tests.
+    previous_root = os.environ.get("AI_HATS_LIBRARY_ROOT")
     os.environ["AI_HATS_LIBRARY_ROOT"] = str(library)
-    payload = build_composition_payload(
-        project,
-        role_override="maintainer",
-        provider_name="claude",
-        interactive=True,
-        experimental=True,
-    )
+    try:
+        payload = build_composition_payload(
+            project,
+            role_override="maintainer",
+            provider_name="claude",
+            interactive=True,
+            experimental=True,
+        )
+    finally:
+        if previous_root is None:
+            os.environ.pop("AI_HATS_LIBRARY_ROOT", None)
+        else:
+            os.environ["AI_HATS_LIBRARY_ROOT"] = previous_root
     plan = payload.plan
     assert plan is not None and plan.dsl == "re"
     done = [
